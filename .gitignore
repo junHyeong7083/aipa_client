@@ -1,0 +1,110 @@
+# ─────────────────────────────────────────────
+# 보안: 절대 커밋 금지
+# ─────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+key.properties
+google-services.json
+GoogleService-Info.plist
+firebase_options.dart
+firebase_options.dart.secrets
+serviceAccountKey.json
+secrets/
+
+# Claude / IDE 설정
+.claude/
+.cursor/
+
+# ─────────────────────────────────────────────
+# 빌드 산출물 / 캐시
+# ─────────────────────────────────────────────
+/build/
+/coverage/
+.dart_tool/
+.flutter-plugins-dependencies
+.flutter-plugins
+.pub-cache/
+.pub/
+**/ios/Flutter/.last_build_id
+
+# APK / IPA 산출물
+*.apk
+*.aab
+*.ipa
+*.app
+
+# 의존성 잘못 받은 빈 파일들 (=0.12.0, =0.33.0 등)
+=*
+
+# ─────────────────────────────────────────────
+# Flutter 자동 생성
+# ─────────────────────────────────────────────
+**/doc/api/
+**/generated_plugin_registrant.dart
+**/GeneratedPluginRegistrant.swift
+**/GeneratedPluginRegistrant.h
+**/GeneratedPluginRegistrant.m
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+
+# Symbolication
+app.*.symbols
+app.*.map.json
+
+# Android
+/android/.gradle/
+/android/captures/
+/android/gradlew
+/android/gradlew.bat
+/android/local.properties
+/android/**/GeneratedPluginRegistrant.java
+/android/app/debug
+/android/app/profile
+/android/app/release
+GeneratedPluginRegistrant.kt
+
+# iOS
+/ios/Pods/
+/ios/.symlinks/
+/ios/Flutter/App.framework
+/ios/Flutter/Flutter.framework
+/ios/Flutter/Flutter.podspec
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/app.flx
+/ios/Flutter/app.zip
+/ios/Flutter/flutter_assets/
+/ios/ServiceDefinitions.json
+/ios/Runner/GeneratedPluginRegistrant.*
+
+# Linux / macOS / Windows desktop (지원 안 함)
+/linux/
+/macos/
+/windows/
+
+# ─────────────────────────────────────────────
+# IDE / OS
+# ─────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.history
+.atom/
+.build/
+.buildlog/
+.svn/
+.swiftpm/
+migrate_working_dir/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.class
+*.log
+*.pyc
