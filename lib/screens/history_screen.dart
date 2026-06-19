@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import '../models/user_data.dart';
 
-enum HistorySortMode { date, accuracy, personaCount }
+enum HistorySortMode { date, personaCount }
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -20,9 +20,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     switch (_sortMode) {
       case HistorySortMode.date:
         sorted.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        break;
-      case HistorySortMode.accuracy:
-        sorted.sort((a, b) => b.accuracy.compareTo(a.accuracy));
         break;
       case HistorySortMode.personaCount:
         sorted.sort((a, b) => b.personaCount.compareTo(a.personaCount));
@@ -95,12 +92,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       history.length.toString(),
                       Icons.assessment,
                       Colors.blue,
-                    ),
-                    _buildStatItem(
-                      '평균 정확도',
-                      '${(_calculateAverageAccuracy(history) * 100).toInt()}%',
-                      Icons.speed,
-                      Colors.green,
                     ),
                     _buildStatItem(
                       '총 페르소나',
@@ -180,36 +171,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
             children: [
               Row(
                 children: [
-                  // 정확도 표시
+                  // 설문 아이콘
                   Container(
-                    width: 60,
-                    height: 60,
+                    width: 56,
+                    height: 56,
                     decoration: BoxDecoration(
-                      color: _getAccuracyColor(survey.accuracy).withOpacity(0.1),
+                      color: Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '${(survey.accuracy * 100).toInt()}%',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: _getAccuracyColor(survey.accuracy),
-                            ),
-                          ),
-                          Text(
-                            '정확도',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    child: Icon(Icons.assessment, color: Colors.blue.shade400, size: 26),
                   ),
                   const SizedBox(width: 16),
 
@@ -311,12 +281,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Color _getAccuracyColor(double accuracy) {
-    if (accuracy >= 0.8) return Colors.green;
-    if (accuracy >= 0.6) return Colors.orange;
-    return Colors.red;
-  }
-
   Color _getStatusColor(String status) {
     switch (status) {
       case 'completed':
@@ -345,11 +309,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
-  }
-
-  double _calculateAverageAccuracy(List<SurveyHistory> history) {
-    if (history.isEmpty) return 0;
-    return history.map((s) => s.accuracy).reduce((a, b) => a + b) / history.length;
   }
 
   int _calculateTotalPersonas(List<SurveyHistory> history) {
@@ -385,17 +344,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     : null,
                 onTap: () {
                   setState(() => _sortMode = HistorySortMode.date);
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.speed),
-                title: const Text('정확도순'),
-                trailing: _sortMode == HistorySortMode.accuracy
-                    ? const Icon(Icons.check, color: Colors.blue)
-                    : null,
-                onTap: () {
-                  setState(() => _sortMode = HistorySortMode.accuracy);
                   Navigator.pop(context);
                 },
               ),

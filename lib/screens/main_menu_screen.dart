@@ -112,7 +112,9 @@ class _MainMenuScreenState extends State<MainMenuScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
-      body: _isLoading ? _buildLoadingScreen() : _buildMainContent(),
+      body: SafeArea(
+        child: _isLoading ? _buildLoadingScreen() : _buildMainContent(),
+      ),
     );
   }
 
@@ -458,41 +460,110 @@ class _MainMenuScreenState extends State<MainMenuScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 이전 대화 버튼 → 별도 목록 화면
+          GestureDetector(
+            onTap: () => Navigator.pushNamed(context, '/chat-history'),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(children: [
+                Icon(Icons.history, size: 20, color: Colors.grey.shade700),
+                const SizedBox(width: 10),
+                const Expanded(
+                    child: Text('이전 대화',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF191919)))),
+                Icon(Icons.chevron_right, color: Colors.grey.shade400),
+              ]),
+            ),
+          ),
+
           const Text(
-            '누구와 대화할까요?',
+            '어느 커뮤니티와 대화할까요?',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF191919)),
           ),
           const SizedBox(height: 4),
           Text(
-            'AI 페르소나 1명을 선택해서 대화합니다',
+            '커뮤니티를 고르면 그 집단의 말투로 답합니다',
             style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 20),
 
-          // 기본 페르소나 카드들
+          // 커뮤니티별 페르소나 (선택 시 해당 커뮤니티 말투로 응답)
           _buildChatPersonaCard(
-            emoji: '🎓',
-            name: 'AI 교수님',
-            description: '다양한 분야의 전문 지식을 가진 교수',
-            persona: {'name': 'AI 교수님', 'gender': '남성', 'age': 45, 'occupation': '대학교수', 'description': '다양한 분야의 전문 지식을 갖춘 AI 교수님', 'socialStatus': 'senior'},
+            emoji: '🎮',
+            name: '디시인사이드',
+            description: '익명 · 냉소적 · 솔직한 반말',
+            platform: 'dcinside',
+            persona: {'name': '디시인', 'gender': '남성', 'age': 27, 'occupation': '대학생/직장인', 'description': '디시인사이드 헤비유저. 냉소적이고 솔직하며 은어를 자주 씀', 'socialStatus': 'junior'},
           ),
           _buildChatPersonaCard(
-            emoji: '👩‍💼',
-            name: 'MZ 마케터',
-            description: '트렌드에 민감한 20대 마케팅 전문가',
-            persona: {'name': 'MZ 마케터', 'gender': '여성', 'age': 27, 'occupation': '마케터', 'description': '대기업 마케팅팀 3년차, SNS 트렌드 전문', 'socialStatus': 'junior'},
+            emoji: '▶️',
+            name: '유튜브',
+            description: '의견 명확 · 리뷰 신뢰 · 댓글러',
+            platform: 'youtube',
+            persona: {'name': '유튜브 시청자', 'gender': '남성', 'age': 30, 'occupation': '콘텐츠 소비자', 'description': '알고리즘 따라 다양한 영상 시청, 댓글 활발', 'socialStatus': 'junior'},
           ),
           _buildChatPersonaCard(
-            emoji: '👨‍💻',
-            name: 'IT 개발자',
-            description: '기술 관점에서 분석하는 30대 개발자',
-            persona: {'name': 'IT 개발자', 'gender': '남성', 'age': 32, 'occupation': 'IT 개발자', 'description': '스타트업 풀스택 개발자, 기술 트렌드 관심', 'socialStatus': 'junior'},
+            emoji: '🟢',
+            name: '네이버',
+            description: '정중한 존댓말 · 후기·정보 중심',
+            platform: 'naver',
+            persona: {'name': '네이버 카페회원', 'gender': '여성', 'age': 38, 'occupation': '주부/직장인', 'description': '정보 검색·후기 신뢰, 맘카페 활동', 'socialStatus': 'senior'},
           ),
           _buildChatPersonaCard(
-            emoji: '👵',
-            name: '50대 주부',
-            description: '가족 중심적이고 실용적인 시각',
-            persona: {'name': '50대 주부', 'gender': '여성', 'age': 53, 'occupation': '주부', 'description': '자녀 2명, 알뜰 소비, 건강 관심', 'socialStatus': 'senior'},
+            emoji: '📸',
+            name: '인스타그램',
+            description: '감성 표현 · 비주얼 중심 · 이모지',
+            platform: 'instagram',
+            persona: {'name': '인스타 유저', 'gender': '여성', 'age': 25, 'occupation': '트렌드 민감', 'description': '비주얼 중심, 감성적 표현과 이모지를 자주 씀', 'socialStatus': 'junior'},
+          ),
+
+          const SizedBox(height: 12),
+
+          // 멀티 커뮤니티 — 4개 커뮤니티 반응 동시 비교
+          GestureDetector(
+            onTap: () => Navigator.pushNamed(context, '/multi'),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF191919), Color(0xFF3A3A3A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Center(child: Text('🆚', style: TextStyle(fontSize: 22))),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('멀티 커뮤니티', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                        SizedBox(height: 2),
+                        Text('같은 질문, 4개 커뮤니티 반응 한눈에 비교', style: TextStyle(fontSize: 13, color: Color(0xFFB0B0B0))),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.white70),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -548,9 +619,10 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     required String name,
     required String description,
     required Map<String, dynamic> persona,
+    String? platform,
   }) {
     return GestureDetector(
-      onTap: () => _startChat(persona),
+      onTap: () => _startChat(persona, platform: platform),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(18),
@@ -594,10 +666,11 @@ class _MainMenuScreenState extends State<MainMenuScreen>
   // 액션
   // ═══════════════════════════════════════
 
-  void _startChat(Map<String, dynamic> persona) {
+  void _startChat(Map<String, dynamic> persona, {String? platform}) {
     Navigator.pushNamed(context, '/upload', arguments: {
       'mode': 'chat',
       'persona': persona,
+      if (platform != null) 'platform': platform,
     });
   }
 

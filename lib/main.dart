@@ -21,6 +21,8 @@ import 'screens/prompt_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/custom_persona_screen.dart';
+import 'screens/multi_community_screen.dart';
+import 'screens/chat_history_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -83,6 +85,8 @@ class MyApp extends StatelessWidget {
           '/chat': (context) => const ChatScreen(),
           '/profile': (context) => const ProfileScreen(),
           '/custom-persona': (context) => const CustomPersonaScreen(),
+          '/multi': (context) => const MultiCommunityScreen(),
+          '/chat-history': (context) => const ChatHistoryScreen(),
         },
       ),
     );

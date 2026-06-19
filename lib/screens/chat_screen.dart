@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+import '../providers/user_provider.dart';
 import '../services/api_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -32,6 +35,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   String? _extractedText;
   Map<String, dynamic> _persona = {};
   String _personaName = 'AI 교수님';
+  String? _platform; // 선택한 커뮤니티 말투 (youtube/dcinside/naver 등)
+  // 멀티 커뮤니티에서 들어온 경우: 대화 히스토리 이어받기 + 변경 콜백
+  void Function(List<Map<String, String>>)? _onUpdate;
+  // 유저별 영구 저장용
+  String? _userId;
+  String? _sessionId;
 
   @override
   void initState() {
@@ -62,6 +71,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _fileName = args?['fileName'] as String?;
     _filePath = args?['filePath'] as String?;
     _fileType = args?['fileType'] as String?;
+    _platform = args?['platform'] as String?;
+    _onUpdate = args?['onUpdate'] as void Function(List<Map<String, String>>)?;
+    final history = args?['history'] as List?;
+
+    // 유저별 영구 저장: userId + 세션 id 준비
+    _userId = context.read<UserProvider>().currentUser?.uid;
 
     // persona 정보가 전달되면 사용, 아니면 기본 페르소나
     if (args?['persona'] != null) {
@@ -77,6 +92,42 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         'socialStatus': 'senior',
       };
       _personaName = 'AI 교수님';
+    }
+
+    // 세션 id:
+    //  - 재진입(이전 대화에서 들어옴)이면 전달된 sessionId 로 그 세션을 이어감
+    //  - 새 대화면 매번 고유 id 생성 → 같은 커뮤니티라도 대화마다 별도 세션으로 분리
+    final base = _platform != null ? 'plat_$_platform' : 'persona_$_personaName';
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    _sessionId = (args?['sessionId'] as String?) ??
+        (_userId != null ? '${_userId}__${base}__$stamp' : '${base}__$stamp');
+
+    // 멀티 커뮤니티/기존 대화에서 넘어온 경우: 히스토리를 이어받아 복원 (재생성 X)
+    if (history != null && history.isNotEmpty) {
+      setState(() {
+        if (_filePath != null) {
+          _messages.add(ChatMessage(
+            content: _fileName ?? '사진',
+            isUser: true,
+            timestamp: DateTime.now(),
+            attachmentPath: _filePath,
+            attachmentType: _fileType ?? 'image',
+          ));
+        }
+        for (final item in history) {
+          final m = Map<String, dynamic>.from(item as Map);
+          final isUser = m['role'] == 'user';
+          _messages.add(ChatMessage(
+            content: (m['content'] ?? '').toString(),
+            isUser: isUser,
+            timestamp: DateTime.now(),
+            personaName: isUser ? null : _personaName,
+          ));
+        }
+      });
+      _scrollToBottom();
+      _persistChat(); // 멀티커뮤니티/재진입 대화도 즉시 저장 (목록에 뜨도록)
+      return; // 사용자가 이어서 입력할 때까지 대기
     }
 
     // 파일이 있으면 먼저 업로드 시도 + 채팅 버블로 표시
@@ -123,13 +174,50 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   /// 메시지 히스토리를 API 전송용 포맷으로 변환
   /// 마지막 메시지는 제외 (현재 전송 중인 메시지와 중복 방지)
   List<Map<String, String>> _buildHistory() {
-    if (_messages.length <= 1) return [];
-    return _messages.sublist(0, _messages.length - 1).map((m) {
+    final textMsgs = _messages.where((m) => m.attachmentPath == null).toList();
+    if (textMsgs.length <= 1) return [];
+    return textMsgs.sublist(0, textMsgs.length - 1).map((m) {
       return {
         'role': m.isUser ? 'user' : 'assistant',
         'content': m.content,
       };
     }).toList();
+  }
+
+  List<Map<String, String>> _textHistory() => _messages
+      .where((m) => m.attachmentPath == null)
+      .map((m) => {
+            'role': m.isUser ? 'user' : 'assistant',
+            'content': m.content,
+          })
+      .toList();
+
+  /// 현재 대화(텍스트)를 멀티 커뮤니티 화면으로 되돌려 그리드/히스토리 최신화
+  void _emitUpdate() {
+    if (_onUpdate == null) return;
+    _onUpdate!(_textHistory());
+  }
+
+  /// 유저별 영구 저장 (답변 올 때마다 upsert).
+  /// 제목 = 첫 사용자 메시지(주제) → 같은 커뮤니티의 여러 세션을 구분.
+  void _persistChat() {
+    if (_userId == null || _sessionId == null) return;
+    final hist = _textHistory();
+    String title = _personaName;
+    for (final m in hist) {
+      final c = (m['content'] ?? '').trim();
+      if (m['role'] == 'user' && c.isNotEmpty) {
+        title = c.length > 30 ? '${c.substring(0, 30)}…' : c;
+        break;
+      }
+    }
+    ApiService().saveChat(
+      userId: _userId!,
+      sessionId: _sessionId!,
+      platform: _platform,
+      title: title,
+      messages: hist,
+    );
   }
 
   /// AI 응답을 API로 요청하고, 실패 시 Mock 응답으로 fallback
@@ -138,6 +226,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       final response = await ApiService().sendChatMessage(
         message: message,
         persona: _persona,
+        platform: _platform,
         goal: _goal,
         format: _format,
         history: _buildHistory(),
@@ -157,6 +246,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ));
         });
         _scrollToBottom();
+        _emitUpdate();
+        _persistChat();
       }
     } catch (e) {
       debugPrint('API 호출 실패, Mock 응답 사용: $e');
@@ -171,6 +262,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ));
         });
         _scrollToBottom();
+        _emitUpdate();
+        _persistChat();
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -736,19 +829,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 20),
               ListTile(
+                leading: Icon(Icons.camera_alt, color: Colors.purple.shade600),
+                title: const Text('카메라로 촬영'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickFromCamera();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.image, color: Colors.green.shade600),
+                title: const Text('이미지 첨부 (갤러리)'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickAndUploadFile('image');
+                },
+              ),
+              ListTile(
                 leading: Icon(Icons.description, color: Colors.blue.shade600),
                 title: const Text('문서 첨부 (PDF/CSV)'),
                 onTap: () async {
                   Navigator.pop(context);
                   await _pickAndUploadFile('document');
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.image, color: Colors.green.shade600),
-                title: const Text('이미지 첨부'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _pickAndUploadFile('image');
                 },
               ),
               const SizedBox(height: 20),
@@ -757,6 +858,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  /// 카메라로 사진 촬영 → 첨부 미리보기에 등록
+  Future<void> _pickFromCamera() async {
+    try {
+      final picker = ImagePicker();
+      final XFile? shot = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 2000,
+      );
+      if (shot == null) return; // 사용자가 취소
+
+      setState(() {
+        _pendingAttachmentPath = shot.path;
+        _pendingAttachmentName = shot.name.isNotEmpty ? shot.name : 'camera.jpg';
+        _pendingAttachmentType = 'image';
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('카메라 사용 실패: $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _pickAndUploadFile(String type) async {

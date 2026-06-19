@@ -195,6 +195,7 @@ class _UploadScreenState extends State<UploadScreen> {
                           'fileType': _selectedFileType,
                           if (inputArgs.containsKey('persona')) 'persona': inputArgs['persona'],
                           if (inputArgs.containsKey('mode')) 'mode': inputArgs['mode'],
+                          if (inputArgs.containsKey('platform')) 'platform': inputArgs['platform'],
                         });
                       }
                     : null,

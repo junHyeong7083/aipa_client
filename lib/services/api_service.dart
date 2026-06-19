@@ -229,6 +229,7 @@ class ApiService {
   Future<String> sendChatMessage({
     required String message,
     required Map<String, dynamic> persona,
+    String? platform,
     String? goal,
     String? format,
     List<Map<String, String>>? history,
@@ -262,6 +263,7 @@ class ApiService {
     final body = {
       'message': message,
       'persona': persona,
+      if (platform != null) 'platform': platform,
       if (goal != null) 'goal': goal,
       if (format != null) 'format': format,
       if (history != null) 'history': history,
@@ -339,6 +341,77 @@ class ApiService {
     }
 
     return jsonDecode(response.body);
+  }
+
+  // ──────────────────────────────────────────
+  // Chat sessions (유저별 영구 대화 보관, 카톡방식)
+  // ──────────────────────────────────────────
+
+  Map<String, String> get _authHeaders => {
+        'Content-Type': 'application/json',
+        if (ApiConfig.bearerToken.isNotEmpty)
+          'Authorization': 'Bearer ${ApiConfig.bearerToken}',
+      };
+
+  /// 대화방 저장/업데이트 (메시지 올 때마다 호출)
+  Future<void> saveChat({
+    required String userId,
+    required String sessionId,
+    String? platform,
+    required String title,
+    required List<Map<String, String>> messages,
+  }) async {
+    try {
+      await _client
+          .post(Uri.parse('${ApiConfig.chatsUrl}/$userId'),
+              headers: _authHeaders,
+              body: jsonEncode({
+                'id': sessionId,
+                'platform': platform,
+                'title': title,
+                'messages': messages,
+              }))
+          .timeout(const Duration(seconds: 15));
+    } catch (e) {
+      debugPrint('saveChat 실패(무시): $e');
+    }
+  }
+
+  /// 유저의 대화방 목록 (최근순)
+  Future<List<Map<String, dynamic>>> listChats(String userId) async {
+    try {
+      final res = await _client
+          .get(Uri.parse('${ApiConfig.chatsUrl}/$userId'), headers: _headers)
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return [];
+      final body = jsonDecode(res.body);
+      final data = body is Map ? body['data'] : null;
+      if (data is! List) return [];
+      return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (e) {
+      debugPrint('listChats 실패: $e');
+      return [];
+    }
+  }
+
+  /// 대화방 전체 메시지 (재진입용)
+  Future<List<Map<String, String>>> getChatMessages(String userId, String sessionId) async {
+    try {
+      final res = await _client
+          .get(Uri.parse('${ApiConfig.chatsUrl}/$userId/$sessionId'), headers: _headers)
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return [];
+      final body = jsonDecode(res.body);
+      final msgs = (body is Map && body['data'] is Map) ? body['data']['messages'] : null;
+      if (msgs is! List) return [];
+      return msgs
+          .whereType<Map>()
+          .map((m) => {'role': (m['role'] ?? '').toString(), 'content': (m['content'] ?? '').toString()})
+          .toList();
+    } catch (e) {
+      debugPrint('getChatMessages 실패: $e');
+      return [];
+    }
   }
 
   void dispose() {

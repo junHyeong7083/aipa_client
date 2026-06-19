@@ -27,6 +27,7 @@ class _PromptScreenState extends State<PromptScreen> {
   ];
 
   Map<String, dynamic>? _persona;
+  String? _platform;
 
   @override
   void didChangeDependencies() {
@@ -37,6 +38,7 @@ class _PromptScreenState extends State<PromptScreen> {
       _filePath = args['filePath'] as String?;
       _fileType = args['fileType'] as String?;
       _persona ??= args['persona'] as Map<String, dynamic>?;
+      _platform ??= args['platform'] as String?;
     }
   }
 
@@ -313,9 +315,11 @@ class _PromptScreenState extends State<PromptScreen> {
   }
 
   void _startChat() {
-    Navigator.pushNamed(
+    // 중간 화면(업로드·프롬프트)을 스택에서 제거 → 채팅창 뒤로가기 시 바로 홈으로
+    Navigator.pushNamedAndRemoveUntil(
       context,
       '/chat',
+      ModalRoute.withName('/main'),
       arguments: {
         'prompt': _promptController.text,
         'goal': _selectedGoal,
@@ -324,6 +328,7 @@ class _PromptScreenState extends State<PromptScreen> {
         if (_filePath != null) 'filePath': _filePath,
         if (_fileType != null) 'fileType': _fileType,
         if (_persona != null) 'persona': _persona,
+        if (_platform != null) 'platform': _platform,
       },
     );
   }

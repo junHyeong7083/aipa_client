@@ -276,8 +276,28 @@ class SurveyResultScreen extends StatelessWidget {
     final responses = result['detailed_responses'] as List<dynamic>? ?? [];
     if (responses.isEmpty) return const SizedBox();
 
-    // 최대 5개만 표시
-    final displayResponses = responses.take(5).toList();
+    // persona_id → 이름 매핑 (서버 personas 목록 활용)
+    final nameById = <String, String>{};
+    final personas = result['personas'] as List<dynamic>? ?? [];
+    for (final p in personas) {
+      if (p is Map) {
+        nameById[(p['id'] ?? '').toString()] = (p['name'] ?? '').toString();
+      }
+    }
+
+    // 서버가 응답을 페르소나별로 묶어 반환하므로, take(5)는 같은 사람만 나온다.
+    // → 서로 다른 페르소나 5명을 골라서 보여준다.
+    final seen = <String>{};
+    final displayResponses = <Map<String, dynamic>>[];
+    for (final r in responses) {
+      if (r is! Map) continue;
+      final m = Map<String, dynamic>.from(r);
+      final pid = (m['persona_id'] ?? '').toString();
+      if (seen.contains(pid)) continue;
+      seen.add(pid);
+      displayResponses.add(m);
+      if (displayResponses.length >= 5) break;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,10 +308,13 @@ class SurveyResultScreen extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         ...displayResponses.map((r) {
-          final resp = r as Map<String, dynamic>;
+          final resp = r;
           final choice = resp['selected_choice'] ?? resp['scale_value']?.toString() ?? '';
           final explanation = resp['explanation'] ?? '';
-          final personaId = resp['persona_id'] ?? '';
+          final personaId = (resp['persona_id'] ?? '').toString();
+          final displayName = nameById[personaId]?.isNotEmpty == true
+              ? nameById[personaId]!
+              : (personaId.length > 8 ? personaId.substring(0, 8) : personaId);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -309,8 +332,8 @@ class SurveyResultScreen extends StatelessWidget {
                     Icon(Icons.person, size: 16, color: Colors.blue.shade400),
                     const SizedBox(width: 6),
                     Text(
-                      personaId.toString().substring(0, personaId.toString().length.clamp(0, 8)),
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                      displayName,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
                     ),
                     const Spacer(),
                     Container(

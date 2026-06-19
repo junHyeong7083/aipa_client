@@ -363,7 +363,11 @@ class _SurveyScreenState extends State<SurveyScreen> {
                 : '설문 시뮬레이션',
             createdAt: DateTime.now(),
             personaCount: personaProvider.personas.length,
-            accuracy: (result['accuracy'] as num?)?.toDouble() ?? 0.0,
+            // 서버 결과엔 'accuracy'가 없음 → 분포 충실도(0~1)를 정확도로 사용
+            accuracy: ((result['distribution_fidelity'] ??
+                    result['consistency_score'] ??
+                    0) as num)
+                .toDouble(),
             status: 'completed',
           );
           await userProvider.addToHistory(history);
