@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import '../models/user_model.dart';
@@ -8,7 +7,6 @@ import '../services/user_service.dart';
 
 class UserProvider extends ChangeNotifier {
   final UserService _userService = UserService();
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
 
   UserModel? _currentUser;
   UserData? _user;
@@ -30,13 +28,28 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Firebase Auth 세션 확인 (Google, Email)
-      final firebaseUser = _firebaseAuth.currentUser;
-      if (firebaseUser != null) {
-        debugPrint('Firebase 세션 발견: ${firebaseUser.uid}');
+      // 저장된 세션(uid + provider) 확인 — 모든 provider 공통
+      final savedUid = await _userService.getSavedUid();
+      final savedProvider = await _userService.getSavedProvider();
 
-        // Firestore에서 사용자 정보 로드
-        final userModel = await _userService.getUser(firebaseUser.uid);
+      if (savedUid != null) {
+        debugPrint('저장된 세션 발견: $savedUid ($savedProvider)');
+
+        // 카카오는 토큰 유효성도 확인 (만료 시 세션 정리)
+        if (savedProvider == AuthProvider.kakao) {
+          try {
+            await kakao.UserApi.instance.accessTokenInfo();
+          } catch (e) {
+            debugPrint('카카오 토큰 만료: $e');
+            await _userService.clearLocalSession();
+            _isLoading = false;
+            notifyListeners();
+            return false;
+          }
+        }
+
+        // 서버에서 사용자 정보 로드
+        final userModel = await _userService.getUser(savedUid);
         if (userModel != null) {
           _currentUser = userModel;
           _setUserDataFromModel(userModel);
@@ -45,33 +58,6 @@ class UserProvider extends ChangeNotifier {
           await loadHistory();
           notifyListeners();
           return true;
-        }
-      }
-
-      // 2. 카카오 세션 확인
-      final kakaoUid = await _userService.getSavedKakaoUid();
-      if (kakaoUid != null) {
-        debugPrint('카카오 세션 발견: $kakaoUid');
-
-        // 카카오 토큰 유효성 확인
-        try {
-          final tokenInfo = await kakao.UserApi.instance.accessTokenInfo();
-          debugPrint('카카오 토큰 유효: ${tokenInfo.id}');
-
-          // Firestore에서 사용자 정보 로드
-          final userModel = await _userService.getUser(kakaoUid);
-          if (userModel != null) {
-            _currentUser = userModel;
-            _setUserDataFromModel(userModel);
-            _isLoggedIn = true;
-            _isLoading = false;
-            await loadHistory();
-            notifyListeners();
-            return true;
-          }
-        } catch (e) {
-          debugPrint('카카오 토큰 만료: $e');
-          await _userService.clearLocalSession();
         }
       }
 
@@ -94,7 +80,7 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Firestore에 사용자 저장/업데이트
+      // 서버에 사용자 저장/업데이트
       final userModel = await _userService.createOrUpdateUser(
         uid: uid,
         email: email,
@@ -103,8 +89,8 @@ class UserProvider extends ChangeNotifier {
         provider: AuthProvider.google,
       );
 
-      // Provider 저장
-      await _userService.saveProvider(AuthProvider.google);
+      // 세션 저장 (자동 로그인용)
+      await _userService.saveSession(uid, AuthProvider.google);
 
       _currentUser = userModel;
       _setUserDataFromModel(userModel);
@@ -132,7 +118,7 @@ class UserProvider extends ChangeNotifier {
     try {
       final kakaoUid = 'kakao_$uid';
 
-      // Firestore에 사용자 저장/업데이트
+      // 서버에 사용자 저장/업데이트
       final userModel = await _userService.createOrUpdateUser(
         uid: kakaoUid,
         email: email,
@@ -141,8 +127,8 @@ class UserProvider extends ChangeNotifier {
         provider: AuthProvider.kakao,
       );
 
-      // 카카오 세션 로컬 저장
-      await _userService.saveKakaoSession(kakaoUid);
+      // 세션 저장 (자동 로그인용)
+      await _userService.saveSession(kakaoUid, AuthProvider.kakao);
 
       _currentUser = userModel;
       _setUserDataFromModel(userModel);
@@ -162,36 +148,26 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
-  /// 이메일 회원가입
+  /// 이메일 기반 안정적 id 생성 (이메일이 unique 하므로 결정적)
+  String _emailUid(String email) =>
+      'email_${email.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}';
+
+  /// 이메일 회원가입 (서버 POST /users)
   Future<bool> signUp(String email, String password, String name) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Firebase Auth로 회원가입
-      final userCredential =
-          await _firebaseAuth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      if (userCredential.user == null) {
-        throw Exception('회원가입 실패');
-      }
-
-      final uid = userCredential.user!.uid;
-
-      // Firestore에 사용자 저장
       final userModel = await _userService.createOrUpdateUser(
-        uid: uid,
+        uid: _emailUid(email),
         email: email,
         displayName: name,
         provider: AuthProvider.email,
+        password: password,
       );
 
-      // Provider 저장
-      await _userService.saveProvider(AuthProvider.email);
+      await _userService.saveSession(userModel.uid, AuthProvider.email);
 
       _currentUser = userModel;
       _setUserDataFromModel(userModel);
@@ -200,48 +176,24 @@ class UserProvider extends ChangeNotifier {
 
       notifyListeners();
       return true;
-    } on FirebaseAuthException catch (e) {
-      _error = e.message ?? '회원가입 실패';
-      _isLoading = false;
-      notifyListeners();
-      return false;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceFirst('Exception: ', '');
       _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  /// 이메일 로그인
+  /// 이메일 로그인 (서버 POST /users/login)
   Future<bool> login(String email, String password) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Firebase Auth로 로그인
-      final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final userModel = await _userService.loginLocal(email, password);
 
-      if (userCredential.user == null) {
-        throw Exception('로그인 실패');
-      }
-
-      final uid = userCredential.user!.uid;
-
-      // Firestore에서 사용자 정보 로드 또는 생성
-      final userModel = await _userService.createOrUpdateUser(
-        uid: uid,
-        email: email,
-        displayName: email.split('@').first,
-        provider: AuthProvider.email,
-      );
-
-      // Provider 저장
-      await _userService.saveProvider(AuthProvider.email);
+      await _userService.saveSession(userModel.uid, AuthProvider.email);
 
       _currentUser = userModel;
       _setUserDataFromModel(userModel);
@@ -251,13 +203,8 @@ class UserProvider extends ChangeNotifier {
       await loadHistory();
       notifyListeners();
       return true;
-    } on FirebaseAuthException catch (e) {
-      _error = e.message ?? '로그인 실패';
-      _isLoading = false;
-      notifyListeners();
-      return false;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceFirst('Exception: ', '');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -267,11 +214,12 @@ class UserProvider extends ChangeNotifier {
   /// 로그아웃
   Future<void> logout() async {
     try {
-      // Firebase Auth 로그아웃
-      await _firebaseAuth.signOut();
-
       // Google Sign Out
-      await GoogleSignIn().signOut();
+      try {
+        await GoogleSignIn().signOut();
+      } catch (e) {
+        debugPrint('Google 로그아웃 에러 (무시): $e');
+      }
 
       // 카카오 로그아웃
       try {

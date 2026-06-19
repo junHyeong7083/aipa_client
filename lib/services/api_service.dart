@@ -77,8 +77,14 @@ class ApiService {
           response.body);
     }
 
-    final List<dynamic> data = jsonDecode(response.body);
-    return data.map((json) => _convertPersona(json)).toList();
+    final decoded = jsonDecode(response.body);
+    if (decoded is! List) {
+      throw ApiException('페르소나 응답 형식 오류', response.body);
+    }
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map((json) => _convertPersona(json))
+        .toList();
   }
 
   /// aipa-engine Persona → Flutter PersonaData 변환
@@ -170,7 +176,11 @@ class ApiService {
           response.body);
     }
 
-    return jsonDecode(response.body);
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw ApiException('시뮬레이션 응답 형식 오류', response.body);
+    }
+    return decoded;
   }
 
   /// 시뮬레이션 상태 조회 (폴링용)
@@ -185,7 +195,11 @@ class ApiService {
           response.body);
     }
 
-    return jsonDecode(response.body);
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw ApiException('시뮬레이션 상태 응답 형식 오류', response.body);
+    }
+    return decoded;
   }
 
   /// 시뮬레이션 결과 조회
@@ -200,7 +214,11 @@ class ApiService {
           response.body);
     }
 
-    return jsonDecode(response.body);
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw ApiException('결과 응답 형식 오류', response.body);
+    }
+    return decoded;
   }
 
   // ──────────────────────────────────────────
@@ -265,7 +283,10 @@ class ApiService {
     }
 
     final data = jsonDecode(response.body);
-    return data['response'] as String;
+    if (data is! Map<String, dynamic>) {
+      throw ApiException('채팅 응답 형식 오류', response.body);
+    }
+    return data['response'] as String? ?? '';
   }
 
   // ──────────────────────────────────────────
@@ -290,9 +311,14 @@ class ApiService {
       throw ApiException('파일 업로드 실패: ${response.statusCode}', response.body);
     }
 
-    final result = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw ApiException('업로드 응답 형식 오류', response.body);
+    }
+    final result = decoded;
     debugPrint('업로드 응답 키: ${result.keys.toList()}');
-    debugPrint('parsed_questions: ${result['parsed_questions'] != null ? '${(result['parsed_questions'] as List).length}개' : 'null'}');
+    final pq = result['parsed_questions'];
+    debugPrint('parsed_questions: ${pq is List ? '${pq.length}개' : 'null'}');
     return result;
   }
 

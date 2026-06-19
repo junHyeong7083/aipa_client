@@ -19,6 +19,13 @@ class ApiConfig {
   static String get uploadDocumentUrl => '$apiPrefix/upload/document';
   static String get uploadImageUrl => '$apiPrefix/upload/image';
 
+  // Users / Auth (Firestore → PostgreSQL 백엔드)
+  static String get usersUrl => '$apiPrefix/users';
+
+  // 보호 라우트(PUT/DELETE/POST history)용 공유 Bearer 토큰.
+  // 서버 .env 의 API_BEARER_TOKEN 과 동일 값을 클라이언트 .env 에 설정.
+  static String get bearerToken => dotenv.env['API_BEARER_TOKEN'] ?? '';
+
   // Kakao
   static String get kakaoNativeAppKey =>
       dotenv.env['KAKAO_NATIVE_APP_KEY'] ?? '';

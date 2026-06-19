@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_data.dart';
 import '../providers/persona_provider.dart';
 import '../providers/survey_provider.dart';
@@ -18,6 +17,7 @@ class SurveyScreen extends StatefulWidget {
 
 class _SurveyScreenState extends State<SurveyScreen> {
   bool _isRunning = false;
+  bool _disposed = false;
   int _currentStep = 0;
   final List<String> _steps = [
     'PDF 파싱 중...',
@@ -30,7 +30,17 @@ class _SurveyScreenState extends State<SurveyScreen> {
   @override
   void initState() {
     super.initState();
-    _startSurveySimulation();
+    // 첫 빌드 중 Provider 상태 변경(notifyListeners)으로 인한
+    // "setState during build" 예외 방지를 위해 프레임 이후 실행
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _startSurveySimulation();
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   Future<void> _startSurveySimulation() async {
@@ -136,7 +146,10 @@ class _SurveyScreenState extends State<SurveyScreen> {
         questions: questionsToSend,
       );
 
-      final sessionId = session['id'] as String;
+      final sessionId = session['id'] as String?;
+      if (sessionId == null || sessionId.isEmpty) {
+        throw ApiException('세션 ID를 받지 못했습니다', session.toString());
+      }
       surveyProvider.setActiveSession(sessionId);
 
       if (mounted) setState(() => _currentStep = 4);
@@ -283,9 +296,18 @@ class _SurveyScreenState extends State<SurveyScreen> {
     String status = 'pending';
     int errorCount = 0;
     const maxErrors = 10; // 연속 10번 실패하면 중단
+    int polls = 0;
+    const maxPolls = 200; // 3초 * 200 ≈ 10분 절대 상한 (무한 폴링 방지)
 
     while (status != 'completed' && status != 'failed') {
+      if (_disposed) return; // 화면이 사라지면 폴링 종료
+      if (polls++ >= maxPolls) {
+        status = 'failed';
+        surveyProvider.setError('시뮬레이션 시간 초과 (10분)');
+        break;
+      }
       await Future.delayed(const Duration(seconds: 3));
+      if (_disposed) return;
 
       try {
         final statusData = await apiService.getSimulationStatus(sessionId);
@@ -318,11 +340,13 @@ class _SurveyScreenState extends State<SurveyScreen> {
     if (status == 'completed') {
       try {
         final result = await apiService.getSimulationResult(sessionId);
+        if (_disposed) return;
         surveyProvider.setSimulationResult(result);
         surveyProvider.setStatusMessage('시뮬레이션 완료');
         surveyProvider.setActiveSession(null);
 
-        // 알림
+        // 알림 (화면이 dispose 됐으면 context 접근 금지)
+        if (!mounted) return;
         final personaProvider = context.read<PersonaProvider>();
         await NotificationService.showSimulationComplete(
           panelCount: personaProvider.personas.length,

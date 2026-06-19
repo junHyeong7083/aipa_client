@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// 사용자 인증 제공자 타입
 enum AuthProvider {
   google,
@@ -8,7 +6,10 @@ enum AuthProvider {
   guest,
 }
 
-/// Firestore에 저장되는 사용자 모델
+/// 백엔드(users 테이블)에 저장되는 사용자 모델.
+/// 서버 응답 키: id, email, nickname, auth_method, profile_image_url,
+///               interests, plan, plan_expires_at, surveys_remaining,
+///               created_at, last_login_at
 class UserModel {
   final String uid;
   final String email;
@@ -30,37 +31,43 @@ class UserModel {
     this.interests,
   });
 
-  /// Firestore 문서에서 UserModel 생성
-  factory UserModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+  /// 서버 JSON → UserModel
+  factory UserModel.fromJson(Map<String, dynamic> data) {
+    DateTime parseDate(dynamic v) {
+      if (v is String && v.isNotEmpty) {
+        return DateTime.tryParse(v) ?? DateTime.now();
+      }
+      return DateTime.now();
+    }
+
+    final method = (data['auth_method'] ?? data['provider'] ?? 'email').toString();
     return UserModel(
-      uid: data['uid'] ?? doc.id,
+      uid: (data['id'] ?? data['uid'] ?? '').toString(),
       email: data['email'] ?? '',
-      displayName: data['displayName'] ?? 'User',
-      profileImage: data['profileImage'],
+      displayName: data['nickname'] ?? data['displayName'] ?? 'User',
+      profileImage: (data['profile_image_url'] ?? data['profileImage']) as String?,
       provider: AuthProvider.values.firstWhere(
-        (e) => e.name == data['provider'],
+        (e) => e.name == method,
         orElse: () => AuthProvider.email,
       ),
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      lastLoginAt: (data['lastLoginAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: parseDate(data['created_at'] ?? data['createdAt']),
+      lastLoginAt: parseDate(data['last_login_at'] ?? data['lastLoginAt']),
       interests: data['interests'] != null
           ? List<String>.from(data['interests'])
           : null,
     );
   }
 
-  /// Firestore에 저장할 Map으로 변환
-  Map<String, dynamic> toFirestore() {
+  /// 회원가입 요청 바디 (서버 SignupRequest 형태)
+  Map<String, dynamic> toSignupJson({String? password}) {
     return {
-      'uid': uid,
+      'id': uid,
       'email': email,
-      'displayName': displayName,
-      'profileImage': profileImage,
-      'provider': provider.name,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'lastLoginAt': Timestamp.fromDate(lastLoginAt),
-      'interests': interests,
+      if (password != null) 'password': password,
+      'nickname': displayName,
+      'auth_method': provider.name,
+      'profile_image_url': profileImage ?? '',
+      'interests': interests ?? [],
     };
   }
 

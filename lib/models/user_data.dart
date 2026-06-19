@@ -126,27 +126,12 @@ class SurveyHistory {
     );
   }
 
-  /// Firestore DocumentSnapshot에서 SurveyHistory 생성
-  factory SurveyHistory.fromFirestore(dynamic doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return SurveyHistory(
-      id: doc.id,
-      title: data['title'] ?? '',
-      createdAt: data['createdAt'] != null
-          ? (data['createdAt'] as dynamic).toDate()
-          : DateTime.now(),
-      personaCount: data['personaCount'] ?? 0,
-      accuracy: (data['accuracy'] ?? 0).toDouble(),
-      status: data['status'] ?? 'completed',
-    );
-  }
-
-  /// Firestore 저장용 Map 변환
-  Map<String, dynamic> toMap() {
+  /// 서버 저장용 JSON (POST /users/{id}/history)
+  Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'title': title,
-      'createdAt': createdAt,
-      'personaCount': personaCount,
+      'persona_count': personaCount,
       'accuracy': accuracy,
       'status': status,
     };

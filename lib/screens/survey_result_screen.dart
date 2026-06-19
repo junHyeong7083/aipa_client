@@ -155,7 +155,9 @@ class SurveyResultScreen extends StatelessWidget {
       qIndex++;
       final questionId = entry.key;
       final questionText = questionTexts[questionId] as String? ?? questionId;
-      final choices = entry.value as Map<String, dynamic>;
+      final rawChoices = entry.value;
+      if (rawChoices is! Map) continue; // 예상치 못한 형태는 건너뜀
+      final choices = Map<String, dynamic>.from(rawChoices);
 
       widgets.add(_buildQuestionChart(qIndex, questionText, choices));
       widgets.add(const SizedBox(height: 16));
@@ -166,8 +168,9 @@ class SurveyResultScreen extends StatelessWidget {
 
   Widget _buildQuestionChart(int index, String questionId, Map<String, dynamic> choices) {
     // 비율 정렬 (높은 순)
+    double asNum(dynamic v) => v is num ? v.toDouble() : 0.0;
     final sorted = choices.entries.toList()
-      ..sort((a, b) => (b.value as num).compareTo(a.value as num));
+      ..sort((a, b) => asNum(b.value).compareTo(asNum(a.value)));
 
     final colors = [
       const Color(0xFF4A90D9),
@@ -225,7 +228,7 @@ class SurveyResultScreen extends StatelessWidget {
           ...sorted.asMap().entries.map((e) {
             final idx = e.key;
             final choice = e.value.key;
-            final ratio = (e.value.value as num).toDouble();
+            final ratio = asNum(e.value.value);
             final percent = (ratio * 100).toInt();
             final color = colors[idx % colors.length];
 

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
-import 'firebase_options.dart';
 
 import 'providers/selection_provider.dart';
 import 'providers/persona_provider.dart';
@@ -32,16 +30,6 @@ Future<void> main() async {
     await dotenv.load(fileName: ".env");
   } catch (e) {
     debugPrint('dotenv 로드 실패: $e');
-  }
-
-  // Firebase 초기화
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    debugPrint('Firebase 초기화 성공');
-  } catch (e) {
-    debugPrint('Firebase 초기화 실패: $e');
   }
 
   // Kakao SDK 초기화

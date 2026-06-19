@@ -1,35 +1,53 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 import '../models/user_model.dart';
 import '../models/user_data.dart';
 
-/// Firestore 사용자 관리 서비스
+/// 사용자 관리 서비스 (Firestore → PostgreSQL 백엔드 HTTP)
+///
+/// 서버: GET/POST /api/v1/users, /users/login, /users/{id}, /users/{id}/history
+/// 쓰기(PUT/DELETE/POST history)는 공유 Bearer 토큰 헤더 필요.
 class UserService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final String _collection = 'users';
+  final _client = http.Client();
 
-  // SharedPreferences 키
-  static const String _kakaoUidKey = 'kakao_uid';
+  // SharedPreferences 키 (로컬 세션 = 자동 로그인용)
+  static const String _uidKey = 'auth_uid';
   static const String _providerKey = 'auth_provider';
+  // 하위호환: 이전 카카오 전용 키
+  static const String _kakaoUidKey = 'kakao_uid';
 
-  /// 사용자 조회 (uid로)
+  Map<String, String> get _jsonHeaders => {'Content-Type': 'application/json'};
+
+  Map<String, String> get _authHeaders => {
+        'Content-Type': 'application/json',
+        if (ApiConfig.bearerToken.isNotEmpty)
+          'Authorization': 'Bearer ${ApiConfig.bearerToken}',
+      };
+
+  String _userUrl(String uid) => '${ApiConfig.usersUrl}/$uid';
+
+  /// 사용자 조회 (없으면 null)
   Future<UserModel?> getUser(String uid) async {
     try {
-      final doc = await _firestore.collection(_collection).doc(uid).get();
-      if (doc.exists) {
-        return UserModel.fromFirestore(doc);
-      }
-      return null;
+      final res = await _client
+          .get(Uri.parse(_userUrl(uid)), headers: _jsonHeaders)
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return null;
+      final body = jsonDecode(res.body);
+      if (body is! Map || body['data'] is! Map) return null;
+      return UserModel.fromJson(Map<String, dynamic>.from(body['data']));
     } catch (e) {
       debugPrint('UserService.getUser error: $e');
       return null;
     }
   }
 
-  /// 사용자 생성 또는 업데이트
-  /// - 신규 사용자: 문서 생성
-  /// - 기존 사용자: lastLoginAt 업데이트
+  /// 사용자 생성 또는 업데이트 (OAuth/일반 공통)
+  /// - 존재하면 last_login_at 갱신 후 최신 정보 반환
+  /// - 없으면 회원가입(POST) 후 반환
   Future<UserModel> createOrUpdateUser({
     required String uid,
     required String email,
@@ -37,121 +55,128 @@ class UserService {
     String? profileImage,
     required AuthProvider provider,
     List<String>? interests,
+    String? password, // local 가입 시에만
   }) async {
+    // 1) 이미 있으면 로그인 시각만 갱신
+    final existing = await getUser(uid);
+    if (existing != null) {
+      await _touchLastLogin(uid);
+      return existing;
+    }
+
+    // 2) 신규 → 회원가입
+    final model = UserModel(
+      uid: uid,
+      email: email,
+      displayName: displayName,
+      profileImage: profileImage,
+      provider: provider,
+      createdAt: DateTime.now(),
+      lastLoginAt: DateTime.now(),
+      interests: interests,
+    );
+    final res = await _client
+        .post(Uri.parse('${ApiConfig.usersUrl}/'),
+            headers: _jsonHeaders,
+            body: jsonEncode(model.toSignupJson(password: password)))
+        .timeout(const Duration(seconds: 20));
+
+    if (res.statusCode == 201 || res.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      return UserModel.fromJson(Map<String, dynamic>.from(body['data']));
+    }
+    if (res.statusCode == 409) {
+      // 이미 가입된 이메일 → 조회로 폴백
+      final again = await getUser(uid);
+      if (again != null) return again;
+    }
+    throw Exception('회원 생성 실패: ${res.statusCode} ${res.body}');
+  }
+
+  /// 이메일/비밀번호 로그인 (local 계정)
+  Future<UserModel> loginLocal(String email, String password) async {
+    final res = await _client
+        .post(Uri.parse('${ApiConfig.usersUrl}/login'),
+            headers: _jsonHeaders,
+            body: jsonEncode({'email': email, 'password': password}))
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) {
+      String msg = '로그인 실패';
+      try {
+        msg = (jsonDecode(res.body)['detail'] ?? msg).toString();
+      } catch (_) {}
+      throw Exception(msg);
+    }
+    final body = jsonDecode(res.body);
+    return UserModel.fromJson(Map<String, dynamic>.from(body['data']));
+  }
+
+  Future<void> _touchLastLogin(String uid) async {
     try {
-      final docRef = _firestore.collection(_collection).doc(uid);
-      final doc = await docRef.get();
-
-      if (doc.exists) {
-        // 기존 사용자: lastLoginAt만 업데이트
-        await docRef.update({
-          'lastLoginAt': Timestamp.fromDate(DateTime.now()),
-        });
-        return UserModel.fromFirestore(await docRef.get());
-      } else {
-        // 신규 사용자: 문서 생성
-        final now = DateTime.now();
-        final newUser = UserModel(
-          uid: uid,
-          email: email,
-          displayName: displayName,
-          profileImage: profileImage,
-          provider: provider,
-          createdAt: now,
-          lastLoginAt: now,
-          interests: interests,
-        );
-
-        await docRef.set(newUser.toFirestore());
-        return newUser;
-      }
+      await _client
+          .put(Uri.parse(_userUrl(uid)),
+              headers: _authHeaders,
+              body: jsonEncode({'last_login_at': DateTime.now().toIso8601String()}))
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
-      debugPrint('UserService.createOrUpdateUser error: $e');
-      rethrow;
+      debugPrint('UserService._touchLastLogin error (무시): $e');
     }
   }
 
-  /// 사용자 관심사 업데이트
-  Future<void> updateInterests(String uid, List<String> interests) async {
-    try {
-      await _firestore.collection(_collection).doc(uid).update({
-        'interests': interests,
-      });
-    } catch (e) {
-      debugPrint('UserService.updateInterests error: $e');
-      rethrow;
+  Future<void> _updateField(String uid, Map<String, dynamic> fields) async {
+    final res = await _client
+        .put(Uri.parse(_userUrl(uid)),
+            headers: _authHeaders, body: jsonEncode(fields))
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) {
+      throw Exception('업데이트 실패: ${res.statusCode} ${res.body}');
     }
   }
 
-  /// 사용자 이름 업데이트
-  Future<void> updateDisplayName(String uid, String displayName) async {
-    try {
-      await _firestore.collection(_collection).doc(uid).update({
-        'displayName': displayName,
-      });
-    } catch (e) {
-      debugPrint('UserService.updateDisplayName error: $e');
-      rethrow;
-    }
-  }
+  Future<void> updateInterests(String uid, List<String> interests) =>
+      _updateField(uid, {'interests': interests});
 
-  /// 사용자 프로필 이미지 업데이트
-  Future<void> updateProfileImage(String uid, String? profileImage) async {
-    try {
-      await _firestore.collection(_collection).doc(uid).update({
-        'profileImage': profileImage,
-      });
-    } catch (e) {
-      debugPrint('UserService.updateProfileImage error: $e');
-      rethrow;
-    }
-  }
+  Future<void> updateDisplayName(String uid, String displayName) =>
+      _updateField(uid, {'nickname': displayName});
 
-  /// 사용자 삭제
+  Future<void> updateProfileImage(String uid, String? profileImage) =>
+      _updateField(uid, {'profile_image_url': profileImage ?? ''});
+
+  /// 회원 탈퇴
   Future<void> deleteUser(String uid) async {
-    try {
-      await _firestore.collection(_collection).doc(uid).delete();
-    } catch (e) {
-      debugPrint('UserService.deleteUser error: $e');
-      rethrow;
+    final res = await _client
+        .delete(Uri.parse(_userUrl(uid)), headers: _authHeaders)
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) {
+      throw Exception('회원 탈퇴 실패: ${res.statusCode}');
     }
   }
 
-  // ============ 설문 히스토리 관리 ============
+  // ============ 설문 히스토리 ============
 
-  /// Firestore에 설문 결과 저장
   Future<void> saveSurveyHistory(String userId, SurveyHistory history) async {
-    try {
-      await _firestore
-          .collection(_collection)
-          .doc(userId)
-          .collection('survey_history')
-          .doc(history.id)
-          .set({
-        'title': history.title,
-        'createdAt': Timestamp.fromDate(history.createdAt),
-        'personaCount': history.personaCount,
-        'accuracy': history.accuracy,
-        'status': history.status,
-      });
-    } catch (e) {
-      debugPrint('UserService.saveSurveyHistory error: $e');
-      rethrow;
+    final res = await _client
+        .post(Uri.parse('${_userUrl(userId)}/history'),
+            headers: _authHeaders, body: jsonEncode(history.toJson()))
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) {
+      throw Exception('히스토리 저장 실패: ${res.statusCode}');
     }
   }
 
-  /// Firestore에서 설문 히스토리 로드
   Future<List<SurveyHistory>> loadSurveyHistory(String userId) async {
     try {
-      final snapshot = await _firestore
-          .collection(_collection)
-          .doc(userId)
-          .collection('survey_history')
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
-      return snapshot.docs
-          .map((doc) => SurveyHistory.fromFirestore(doc))
+      final res = await _client
+          .get(Uri.parse('${_userUrl(userId)}/history?limit=50'),
+              headers: _jsonHeaders)
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return [];
+      final body = jsonDecode(res.body);
+      final data = (body is Map ? body['data'] : null);
+      if (data is! List) return [];
+      return data
+          .whereType<Map>()
+          .map((j) => SurveyHistory.fromJson(Map<String, dynamic>.from(j)))
           .toList();
     } catch (e) {
       debugPrint('UserService.loadSurveyHistory error: $e');
@@ -159,46 +184,46 @@ class UserService {
     }
   }
 
-  // ============ 로컬 세션 관리 (카카오용) ============
+  // ============ 로컬 세션 (자동 로그인) ============
 
-  /// 카카오 세션 저장
-  Future<void> saveKakaoSession(String uid) async {
+  /// 로그인 성공 시 uid + provider 저장 (모든 provider 공통)
+  Future<void> saveSession(String uid, AuthProvider provider) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kakaoUidKey, uid);
-    await prefs.setString(_providerKey, AuthProvider.kakao.name);
+    await prefs.setString(_uidKey, uid);
+    await prefs.setString(_providerKey, provider.name);
   }
 
-  /// 저장된 카카오 세션 조회
-  Future<String?> getSavedKakaoUid() async {
+  /// 저장된 uid (없으면 하위호환 카카오 키 확인)
+  Future<String?> getSavedUid() async {
     final prefs = await SharedPreferences.getInstance();
-    final provider = prefs.getString(_providerKey);
-    if (provider == AuthProvider.kakao.name) {
-      return prefs.getString(_kakaoUidKey);
-    }
-    return null;
+    return prefs.getString(_uidKey) ?? prefs.getString(_kakaoUidKey);
   }
 
-  /// 로컬 세션 삭제 (로그아웃 시)
-  Future<void> clearLocalSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kakaoUidKey);
-    await prefs.remove(_providerKey);
-  }
-
-  /// 저장된 인증 제공자 조회
   Future<AuthProvider?> getSavedProvider() async {
     final prefs = await SharedPreferences.getInstance();
-    final provider = prefs.getString(_providerKey);
-    if (provider != null) {
-      return AuthProvider.values.firstWhere(
-        (e) => e.name == provider,
-        orElse: () => AuthProvider.email,
-      );
-    }
+    final p = prefs.getString(_providerKey);
+    if (p == null) return null;
+    return AuthProvider.values.firstWhere(
+      (e) => e.name == p,
+      orElse: () => AuthProvider.email,
+    );
+  }
+
+  Future<void> clearLocalSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_uidKey);
+    await prefs.remove(_providerKey);
+    await prefs.remove(_kakaoUidKey);
+  }
+
+  // 하위호환 별칭 (기존 호출부 보호)
+  Future<void> saveKakaoSession(String uid) => saveSession(uid, AuthProvider.kakao);
+  Future<String?> getSavedKakaoUid() async {
+    final provider = await getSavedProvider();
+    if (provider == AuthProvider.kakao) return getSavedUid();
     return null;
   }
 
-  /// 인증 제공자 저장
   Future<void> saveProvider(AuthProvider provider) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_providerKey, provider.name);

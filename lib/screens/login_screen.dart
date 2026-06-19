@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import '../providers/user_provider.dart';
@@ -1217,24 +1216,17 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _signInWithGoogle() async {
     try {
+      // Firebase 없이 Google SDK 로 계정 정보만 획득 → 서버에 등록
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return;
+      if (googleUser == null) return; // 사용자가 취소
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
-
-      if (userCredential.user != null && mounted) {
+      if (mounted) {
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         final success = await userProvider.loginWithGoogle(
-          userCredential.user!.uid,
-          userCredential.user!.email ?? '',
-          userCredential.user!.displayName ?? 'User',
-          profileImage: userCredential.user!.photoURL,
+          'google_${googleUser.id}',
+          googleUser.email,
+          googleUser.displayName ?? 'User',
+          profileImage: googleUser.photoUrl,
         );
         debugPrint('Google 로그인 결과: $success, user: ${userProvider.currentUser?.displayName}');
         if (success && mounted) {
@@ -1243,8 +1235,6 @@ class _LoginScreenState extends State<LoginScreen>
           _showError('Google 로그인 실패: ${userProvider.error}');
         }
       }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) _showError('로그인 실패: ${e.message}');
     } catch (e) {
       debugPrint('Google 로그인 에러: $e');
       if (mounted) _showError('로그인 중 오류: $e');
