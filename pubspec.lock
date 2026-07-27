@@ -130,7 +130,7 @@ packages:
     source: hosted
     version: "0.7.12"
   dio:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: dio
       sha256: d90ee57923d1828ac14e492ca49440f65477f4bb1263575900be731a3dac66a9
@@ -441,7 +441,7 @@ packages:
     source: hosted
     version: "0.7.2"
   json_annotation:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: json_annotation
       sha256: "1ce844379ca14835a50d2f019a3099f419082cfdd231cd86a142af94dd5c6bb1"

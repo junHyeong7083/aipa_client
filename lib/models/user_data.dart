@@ -116,11 +116,15 @@ class SurveyHistory {
   });
 
   factory SurveyHistory.fromJson(Map<String, dynamic> json) {
+    // 서버 응답(camelCase)과 toJson 결과(snake_case) 모두 허용
+    final created = json['createdAt'] ?? json['created_at'];
     return SurveyHistory(
       id: json['id'] ?? '',
       title: json['title'] ?? '',
-      createdAt: DateTime.parse(json['createdAt']),
-      personaCount: json['personaCount'] ?? 0,
+      createdAt: created != null
+          ? (DateTime.tryParse(created.toString()) ?? DateTime.now())
+          : DateTime.now(),
+      personaCount: json['personaCount'] ?? json['persona_count'] ?? 0,
       accuracy: (json['accuracy'] ?? 0).toDouble(),
       status: json['status'] ?? 'completed',
     );

@@ -40,7 +40,6 @@ dependencies:
 
   # HTTP 통신
   http: ^1.2.2
-  dio: ^5.7.0
 
   # 파일 처리
   file_picker: ^8.1.4
@@ -48,9 +47,6 @@ dependencies:
 
   # CSV 내보내기
   csv: ^6.0.0
-
-  # JSON 직렬화
-  json_annotation: ^4.9.0
 
   # 환경변수
   flutter_dotenv: ^5.2.1
